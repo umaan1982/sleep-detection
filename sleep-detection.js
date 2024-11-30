@@ -39,7 +39,7 @@ function detectAdverseEvents(magnitude) {
     const deltaTime = now - lastEventTime;
 
     storage.write("lastAdverseEvent", now);
-    storage.put("adverseEventDelta", deltaTime); 
+    storage.write("adverseEventDelta", deltaTime); 
   }
 }
 
