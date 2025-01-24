@@ -3,8 +3,8 @@ const PURGE_INTERVAL = 86400000; // 24 hours
 const BUFFER_WRITE_INTERVAL = 300000; // 5 minutes
 const MAX_BUFFER_SIZE = 20; // Maximum size for buffers
 const CONFIG = {
-  deepSleepThreshold: 0.05,
-  lightSleepThreshold: 0.2,
+  deepSleepThreshold: 1.00,
+  lightSleepThreshold: 1.05,
   adverseEventThreshold: 1.5,
   pollInterval: 800,
 };
