@@ -3,10 +3,12 @@ const PURGE_INTERVAL = 86400000; // 24 hours
 const BUFFER_WRITE_INTERVAL = 300000; // 5 minutes
 const MAX_BUFFER_SIZE = 20; // Maximum size for buffers
 const CONFIG = {
-  deepSleepThreshold: 1.00,
-  lightSleepThreshold: 1.05,
-  adverseEventThreshold: 1.5,
-  pollInterval: 800,
+  deepSleepThreshold: 1.02,      // Magnitude below this value is "Deep Sleep"
+  lightSleepThreshold: 1.1,     // Magnitude between thresholds is "Light Sleep"
+  adverseEventThreshold: 1.5,   // Magnitude above this value is considered an adverse event
+  heartRateDeepSleep: 75,       // Adjusted: Heart rate below this value indicates "Deep Sleep"
+  heartRateLightSleep: 90,      // Adjusted: Heart rate between deepSleep and this indicates "Light Sleep"
+  pollInterval: 800,            // Polling interval for accelerometer in ms
 };
 
 let sleepBuffer = [];
@@ -16,11 +18,17 @@ let flushInterval;
 let phaseDurations = { "Deep Sleep": 0, "Light Sleep": 0, "Awake": 0 };
 let lastPhase = null;
 let lastPhaseStartTime = null;
+let lastHeartRate = null;
 
 // Detect Sleep Phase
-function detectSleepPhase(magnitude) {
-  if (magnitude < CONFIG.deepSleepThreshold) return "Deep Sleep";
-  if (magnitude < CONFIG.lightSleepThreshold) return "Light Sleep";
+function detectSleepPhase(magnitude, heartRate) {
+  // Combine heart rate and accelerometer data for detection
+  if (heartRate !== null && heartRate < CONFIG.heartRateDeepSleep && magnitude < CONFIG.deepSleepThreshold) {
+    return "Deep Sleep";
+  }
+  if (heartRate !== null && heartRate < CONFIG.heartRateLightSleep && magnitude < CONFIG.lightSleepThreshold) {
+    return "Light Sleep";
+  }
   return "Awake";
 }
 
@@ -57,7 +65,6 @@ function consolidateSleepData() {
 
   if (sleepBuffer.length > MAX_BUFFER_SIZE) sleepBuffer.shift();
 }
-
 
 // Buffer Adverse Event
 function bufferAdverseEvent(magnitude) {
@@ -141,12 +148,19 @@ function generateReport() {
   }
 }
 
+Bangle.setHRMPower(true, "app");
+
 // Event Listener for Accelerometer
 Bangle.on("accel", (accel) => {
   const magnitude = Math.sqrt(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z);
-  const phase = detectSleepPhase(magnitude);
+  const phase = detectSleepPhase(magnitude, lastHeartRate);
   trackPhase(phase);
   detectAdverseEvents(magnitude);
+});
+
+// Event Listener for Heart Rate Sensor
+Bangle.on("HRM", (hrm) => {
+  lastHeartRate = hrm.bpm;
 });
 
 // Poll Interval for Accelerometer
@@ -169,6 +183,8 @@ E.on("kill", () => {
   consolidateSleepData();
   flushBuffersToStorage();
   console.log("App exiting...");
+  Bangle.setHRMPower(false, "app");
+  console.log("Heart Rate Sensor turned off.");
 });
 
 console.log("Sleep tracking started...");
