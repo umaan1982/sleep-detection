@@ -1,5 +1,4 @@
 const storage = require("Storage");
-const PURGE_INTERVAL = 86400000; // 24 hours
 const BUFFER_WRITE_INTERVAL = 300000; // 5 minutes
 const MAX_BUFFER_SIZE = 20; // Maximum size for buffers
 const CONFIG = {
@@ -91,7 +90,6 @@ function flushBuffersToStorage() {
     let savedSleepData = JSON.parse(storage.read("sleepLog.json") || "[]");
     savedSleepData = savedSleepData.concat(sleepBuffer);
     sleepBuffer = [];
-    savedSleepData = savedSleepData.filter(entry => Date.now() - entry.time <= PURGE_INTERVAL);
     storage.write("sleepLog.json", JSON.stringify(savedSleepData));
 
     // Save adverse events
@@ -142,7 +140,10 @@ function generateReport() {
     setTimeout(() => {
       g.clear();
       g.drawString("Report cleared", g.getWidth() / 2, g.getHeight() / 2);
-    }, 10000);
+      setTimeout(() => {
+        g.clear();
+      }, 3000);
+    }, 5000);
   } catch (error) {
     console.error("Failed to generate report:", error);
   }
@@ -176,6 +177,18 @@ flushInterval = setInterval(() => {
 setWatch(() => {
   generateReport();
 }, BTN2, { repeat: true, edge: "falling" });
+
+// Clear All Data on Button 3 Press
+setWatch(() => {
+  storage.erase("sleepLog.json");
+  storage.erase("adverseEvents.json");
+  sleepBuffer = [];
+  adverseEventBuffer = [];
+  g.clear();
+  g.setFont("6x8", 2);
+  g.setFontAlign(0, 0);
+  g.drawString("Data has been reset.", g.getWidth() / 2, g.getHeight() / 2);
+}, BTN3, { repeat: true, edge: "falling" });
 
 // Cleanup on Exit
 E.on("kill", () => {
