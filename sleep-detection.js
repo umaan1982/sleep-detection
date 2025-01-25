@@ -151,6 +151,21 @@ function generateReport() {
 
 Bangle.setHRMPower(true, "app");
 
+// Display Battery Level
+function displayBatteryLevel() {
+  const batteryLevel = E.getBattery();
+  g.setFont("6x8", 2);
+  g.setFontAlign(-1, -1); // Align to top-left corner
+  g.clearRect(0, 0, 80, 20); // Clear battery display area
+  g.drawString(`   Battery: ${batteryLevel}%`, 10, 10);
+}
+
+// Update battery level every minute
+setInterval(displayBatteryLevel, 60000);
+
+// Initial battery display
+displayBatteryLevel();
+
 // Event Listener for Accelerometer
 Bangle.on("accel", (accel) => {
   const magnitude = Math.sqrt(accel.x * accel.x + accel.y * accel.y + accel.z * accel.z);
