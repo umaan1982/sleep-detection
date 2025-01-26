@@ -1,20 +1,19 @@
 const storage = require("Storage");
-const BUFFER_WRITE_INTERVAL = 300000; // 5 minutes
+const BUFFER_WRITE_INTERVAL = 120000; // 2 minutes
 const MAX_BUFFER_SIZE = 20; // Maximum size for buffers
 const CONFIG = {
   deepSleepThreshold: 1.02,      // Magnitude below this value is "Deep Sleep"
   lightSleepThreshold: 1.1,     // Magnitude between thresholds is "Light Sleep"
   adverseEventThreshold: 1.5,   // Magnitude above this value is considered an adverse event
-  heartRateDeepSleep: 75,       // Adjusted: Heart rate below this value indicates "Deep Sleep"
-  heartRateLightSleep: 90,      // Adjusted: Heart rate between deepSleep and this indicates "Light Sleep"
+  heartRateDeepSleep: 80,       // Adjusted: Heart rate below this value indicates "Deep Sleep"
+  heartRateLightSleep: 95,      // Adjusted: Heart rate between deepSleep and this indicates "Light Sleep"
   pollInterval: 800,            // Polling interval for accelerometer in ms
 };
 
-let sleepBuffer = [];
+let sleepBuffer = { "Deep Sleep": 0, "Light Sleep": 0, "Awake": 0 };
 let adverseEventBuffer = [];
 let lastAdverseEventTime = 0;
 let flushInterval;
-let phaseDurations = { "Deep Sleep": 0, "Light Sleep": 0, "Awake": 0 };
 let lastPhase = null;
 let lastPhaseStartTime = null;
 let lastHeartRate = null;
@@ -36,33 +35,10 @@ function trackPhase(phase) {
   const now = Date.now();
   if (lastPhase !== null) {
     const duration = (now - lastPhaseStartTime) / 1000;
-    phaseDurations[lastPhase] += duration;
+    sleepBuffer[lastPhase] += duration;
   }
   lastPhase = phase;
   lastPhaseStartTime = now;
-}
-
-// Write Consolidated Data to Sleep Log
-function consolidateSleepData() {
-  const now = Date.now();
-
-  if (lastPhase !== null) {
-    const duration = (now - lastPhaseStartTime) / 1000;
-    phaseDurations[lastPhase] += duration;
-    lastPhaseStartTime = now;
-  }
-
-  for (let phase in phaseDurations) {
-    const duration = phaseDurations[phase];
-    if (duration > 0) {
-      sleepBuffer.push({ time: now, phase: phase, duration: duration });
-    }
-  }
-
-  // Reset phase durations
-  phaseDurations = { "Deep Sleep": 0, "Light Sleep": 0, "Awake": 0 };
-
-  if (sleepBuffer.length > MAX_BUFFER_SIZE) sleepBuffer.shift();
 }
 
 // Buffer Adverse Event
@@ -86,17 +62,30 @@ function detectAdverseEvents(magnitude) {
 // Flush Buffers to Storage
 function flushBuffersToStorage() {
   try {
-    // Save sleep data
+    // Read the existing sleep data
     let savedSleepData = JSON.parse(storage.read("sleepLog.json") || "[]");
-    savedSleepData = savedSleepData.concat(sleepBuffer);
-    sleepBuffer = [];
+
+    if (savedSleepData.length === 0) {
+      // Initialize with the current buffer if no data exists
+      savedSleepData = [{
+        time: Date.now(),
+        "Deep Sleep": sleepBuffer["Deep Sleep"],
+        "Light Sleep": sleepBuffer["Light Sleep"],
+        "Awake": sleepBuffer["Awake"]
+    }];
+    } else {
+      // Update the existing row by adding the new durations
+      savedSleepData[0]."Deep Sleep" += sleepBuffer["Deep Sleep"];
+      savedSleepData[0]."Light Sleep" += sleepBuffer["Light Sleep"];
+      savedSleepData[0]."Awake" += sleepBuffer["Awake"];
+      savedSleepData[0].time = Date.now();
+    }
+
+    // Write the updated data back to storage
     storage.write("sleepLog.json", JSON.stringify(savedSleepData));
 
-    // Save adverse events
-    let savedAdverseEvents = JSON.parse(storage.read("adverseEvents.json") || "[]");
-    savedAdverseEvents = savedAdverseEvents.concat(adverseEventBuffer);
-    adverseEventBuffer = [];
-    storage.write("adverseEvents.json", JSON.stringify(savedAdverseEvents));
+    // Reset the buffer
+    sleepBuffer = { "Deep Sleep": 0, "Light Sleep": 0, "Awake": 0 };
   } catch (error) {
     console.error("Failed to flush buffers to storage:", error);
   }
@@ -112,19 +101,10 @@ function generateReport() {
       lightSleepTime = 0,
       awakeTime = 0;
 
-    for (let i = 0; i < savedData.length; i++) {
-      const entry = savedData[i];
-      switch (entry.phase) {
-        case "Deep Sleep":
-          deepSleepTime += entry.duration;
-          break;
-        case "Light Sleep":
-          lightSleepTime += entry.duration;
-          break;
-        case "Awake":
-          awakeTime += entry.duration;
-          break;
-      }
+    if (savedData.length > 0) {
+      deepSleepTime = savedData[0]["Deep Sleep"];
+      lightSleepTime = savedData[0]["Light Sleep"];
+      awakeTime = savedData[0]["Awake"];
     }
 
     g.clear();
@@ -157,7 +137,7 @@ function displayBatteryLevel() {
   g.setFont("6x8", 2);
   g.setFontAlign(-1, -1); // Align to top-left corner
   g.clearRect(0, 0, 80, 20); // Clear battery display area
-  g.drawString(`   Battery: ${batteryLevel}%`, 10, 10);
+  g.drawString(`Battery: ${batteryLevel}%`, 10, 10);
 }
 
 // Update battery level every minute
@@ -184,7 +164,6 @@ Bangle.setPollInterval(CONFIG.pollInterval);
 
 // Flush Buffers Periodically
 flushInterval = setInterval(() => {
-  consolidateSleepData();
   flushBuffersToStorage();
 }, BUFFER_WRITE_INTERVAL);
 
@@ -197,7 +176,7 @@ setWatch(() => {
 setWatch(() => {
   storage.erase("sleepLog.json");
   storage.erase("adverseEvents.json");
-  sleepBuffer = [];
+  sleepBuffer = { "Deep Sleep": 0, "Light Sleep": 0, "Awake": 0 };
   adverseEventBuffer = [];
   g.clear();
   g.setFont("6x8", 2);
@@ -208,7 +187,6 @@ setWatch(() => {
 // Cleanup on Exit
 E.on("kill", () => {
   clearInterval(flushInterval);
-  consolidateSleepData();
   flushBuffersToStorage();
   console.log("App exiting...");
   Bangle.setHRMPower(false, "app");
